@@ -3,380 +3,157 @@
 #include <stdint.h>
 #include <time.h>
 
+#define MAXT 1000005
+
 typedef long long ll;
 
-// treap -> priority *rand()*
-
-typedef struct Node
+// 每個群組只存 3 個值：
+// init：插入時的原始 value
+// cnt ：這個群組裡有幾顆
+// op3：插入時已做過的 Type3 次數
+typedef struct 
 {
-    ll key;
-    int count;
-    int size;
-    int priority;
-    struct Node *left;
-    struct Node *right;
-} Node;
+    ll init;
+    ll cnt;
+    ll op3;
+    ll rank;
+} Group;
 
-int getsize(Node *node)
+
+Group *st;
+int top = 0;            
+ll total_cnt = 0;       // S 裡目前有幾顆 diamond
+ll accu3 = 0;           // 做過幾次 Type3
+ll M;                   // 從輸入讀入的常數 M
+
+
+
+// Type1：刪除所有 < v，然後插入 Ni 個 v
+void op1(ll Ni, ll v)
 {
-    return node ? node->size : 0;
-}
+    ll removed = 0;
 
-void updatesize(Node *node)
-{
-    if (node)
+    // 1) 整群 pop 掉所有「最低那群最小值 < v」的群組
+    while (top > 0) 
     {
-        node->size = getsize(node->left) + getsize(node->right) + node->count;
-    }
-}
-
-Node *newnode(ll key, int count)
-{
-    Node *node = malloc(sizeof(Node));
-    node->key = key;
-    node->count = count;
-    node->size = count;
-    node->priority = rand();
-    node->left = NULL;
-    node->right = NULL;
-    return node;
-}
-
-void split(Node *root, ll key, Node **left, Node **right)
-{
-    if (root == NULL)
-    {
-        *left = NULL;
-        *right = NULL;
-        return;
-    }
-    if (root->key < key)
-    {
-        split(root->right, key, &root->right, right);
-        *left = root;
-    }
-    else
-    {
-        split(root->left, key, left, &root->left);
-        *right = root;
-    }
-    updatesize(root);
-}
-
-Node *merge(Node *left, Node *right)
-{
-    if (!left || !right)
-        return left ? left : right;
-
-    if (left->priority > right->priority)
-    {
-        left->right = merge(left->right, right);
-        updatesize(left);
-        return left;
-    }
-    else
-    {
-        right->left = merge(left, right->left);
-        updatesize(right);
-        return right;
-    }
-}
-
-Node *insert(Node *root, ll key, int count)
-{
-    if (root == NULL)
-    {
-        return newnode(key, count);
-    }
-
-    if (key == root->key)
-    {
-        root->count += count;
-        updatesize(root);
-        return root;
-    }
-    else if (key < root->key)
-    {
-        root->left = insert(root->left, key, count);
-
-        if (root->left->priority > root->priority)
+        Group *g = &st[top - 1];
+        ll delta = accu3 - g->op3;
+        // 最小那顆的值
+        ll max_val = g->init + delta * (M - g->rank + 1);
+        if (max_val < v) 
         {
-            Node *L = root->left;
-            root->left = L->right;
-            L->right = root;
-            updatesize(root);
-            updatesize(L);
-            return L;
-        }
-    }
-    else
-    {
-        root->right = insert(root->right, key, count);
-
-        if (root->right->priority > root->priority)
-        {
-            Node *R = root->right;
-            root->right = R->left;
-            R->left = root;
-            updatesize(root);
-            updatesize(R);
-            return R;
-        }
-    }
-
-    updatesize(root);
-    return root;
-}
-
-int query(Node *root, ll key)
-{
-    if (root == NULL)
-    {
-        return 0;
-    }
-    if (key == root->key)
-    {
-        return root->count;
-    }
-    else if (key < root->key)
-    {
-        return query(root->left, key);
-    }
-    else
-    {
-        return query(root->right, key);
-    }
-}
-
-void freeall(Node *root)
-{
-    if (root == NULL)
-    {
-        return;
-    }
-
-    int capacity = 1024;
-    int top = 0;
-    Node **stack = malloc(capacity * sizeof(Node *));
-
-    stack[top++] = root;
-
-    while (top > 0)
-    {
-        Node *node = stack[--top];
-
-        if (node->left)
-        {
-            if (top == capacity)
-            {
-                capacity *= 2;
-                stack = realloc(stack, capacity * sizeof(Node *));
-            }
-            stack[top++] = node->left;
-        }
-        if (node->right)
-        {
-            if (top == capacity)
-            {
-                capacity *= 2;
-                stack = realloc(stack, capacity * sizeof(Node *));
-            }
-            stack[top++] = node->right;
-        }
-        free(node);
-    }
-    free(stack);
-}
-
-void traverse(Node *root, ll *arr, int *index)
-{
-    int stackCapacity = 128;
-    int stackSize = 0;
-    Node **stack = malloc(stackCapacity * sizeof(Node *));
-    Node *curr = root;
-    while (curr != NULL || stackSize > 0)
-    {
-        while (curr != NULL)
-        {
-            if (stackSize == stackCapacity)
-            {
-                stackCapacity *= 2;
-                stack = realloc(stack, stackCapacity * sizeof(Node *));
-            }
-            stack[stackSize++] = curr;
-            curr = curr->right;
-        }
-        curr = stack[--stackSize];
-        // 將此節點的 key 重複 count 次存入陣列
-        for (int i = 0; i < curr->count; i++)
-        {
-            arr[(*index)++] = curr->key;
-        }
-        curr = curr->left;
-    }
-    free(stack);
-}
-
-void recalc(Node *root)
-{
-    if (!root)
-    {
-        return;
-    }
-    int capacity = 128;
-    int stackSize = 0;
-    Node **stack = malloc(capacity * sizeof(Node *));
-    int *visited = malloc(capacity * sizeof(int));
-    Node *curr = root;
-    while (curr || stackSize > 0)
-    {
-        if (curr)
-        {
-            if (stackSize == capacity)
-            {
-                capacity *= 2;
-                stack = realloc(stack, capacity * sizeof(Node *));
-                visited = realloc(visited, capacity * sizeof(int));
-            }
-            stack[stackSize] = curr;
-            visited[stackSize] = 0;
-            stackSize++;
-            curr = curr->left;
-        }
-        else
-        {
-            curr = stack[stackSize - 1];
-            if (visited[stackSize - 1] == 0)
-            {
-                visited[stackSize - 1] = 1;
-                curr = curr->right;
-            }
-            else
-            {
-                updatesize(curr);
-                stackSize--;
-                curr = NULL;
-            }
-        }
-    }
-    free(stack);
-    free(visited);
-}
-
-Node *buildtreap(ll *arr, int n)
-{
-    Node **stack = malloc(n * sizeof(Node *));
-    Node *root = NULL;
-
-    int top = -1;
-    for (int i = 0; i < n; i++)
-    {
-        Node *curr = newnode(arr[i], 1);
-        while (top >= 0 && stack[top]->priority < curr->priority)
-        {
-            curr->left = stack[top];
+            removed += g->cnt;
+            total_cnt -= g->cnt;
             top--;
         }
-        if (top >= 0)
-        {
-            stack[top]->right = curr;
-        }
-        stack[++top] = curr;
+        else break;  
     }
-    root = stack[0];
-    free(stack);
 
-    recalc(root);
-    return root;
-
-    for (int i = 0; i < n; i++)
+    // 2) 
+    if (top > 0) 
     {
-        Node *curr = newnode(arr[i], 1);
-        while (top >= 0 && stack[top]->priority < curr->priority)
+        Group *g = &st[top - 1];
+        ll delta = accu3 - g->op3;
+        ll max_val = g->init + delta * (M - g->rank + 1);
+        ll min_val = g->init + delta * (M - (g->rank + g->cnt - 1) + 1);
+        if (min_val < v && max_val >= v) 
         {
-            curr->left = stack[top];
-            top--;
+            // 解 inequality: init_v + delta*(M - j + 1) >= v => j <= M - ceil((v - init_v)/delta) + 1
+            ll k = (v - g->init + delta - 1) / delta;     
+            ll keep_upto = M - k + 1;                       
+            ll num_keep = keep_upto - g->rank + 1;   
+            ll num_rem = g->cnt - num_keep;               
+            removed += num_rem;
+            total_cnt -= num_rem;
+            g->cnt = num_keep;
         }
-        if (top >= 0)
-        {
-            stack[top]->right = curr;
-        }
-        stack[++top] = curr;
     }
 
-    root = stack[0];
-    free(stack);
-    recalc(root);
+    if (top > 0 && st[top-1].init == v && st[top-1].op3 == accu3) 
+    {
+        st[top-1].cnt += Ni;
+        total_cnt += Ni;
+    }
+    else 
+    {
+        st[top].init = v;
+        st[top].cnt = Ni;
+        st[top].op3 = accu3;
+        st[top].rank = total_cnt + 1;
+        top++;
+        total_cnt += Ni;
+    }
+    printf("%lld\n", removed);
+}
 
-    return root;
+// Type2：query
+void op2(ll p)
+{
+    int left = 0, right = top - 1;
+    // int pos = -1;  
+    while (left <= right) 
+    {
+        int mid = (left + right) >> 1;
+        Group *g = &st[mid];
+        ll delta   = accu3 - g->op3;
+        ll max_val = g->init + delta * (M - g->rank + 1);
+        if (max_val >= p) 
+        {
+            // pos = mid;
+            left = mid + 1;
+        } 
+        else right = mid - 1;
+    }
+    int limit = left;  // [0..limit-1] 的群組都要檢查
+    ll ans = 0;
+    for (int i = 0; i < limit; i++) 
+    {
+        Group *g = &st[i];
+        ll delta   = accu3 - g->op3;
+        ll max_val = g->init + delta * (M - g->rank + 1);
+        ll min_val = g->init + delta * (M - (g->rank + g->cnt - 1) + 1);
+        if (delta == 0) 
+        {
+            if (g->init == p) ans += g->cnt;
+        } 
+        else 
+        {
+            if (p <= max_val && p >= min_val && (max_val - p) % delta == 0)
+                ans += 1;
+        }
+    }
+    printf("%lld\n", ans);
+    
+}
+
+
+void op3()
+{
+    accu3++;
 }
 
 int main()
 {
     int T;
-    ll M;
     scanf("%d %lld", &T, &M);
-    Node *treap = NULL;
-
-    srand((unsigned)time(NULL));
-
-    for (int i = 0; i < T; i++)
+    st = malloc(sizeof(Group) * (T + 5));
+    for(int i = 0; i < T; i++)
     {
-        int n;
-        scanf("%d", &n);
-        if (n == 1)
+        int op;
+        scanf("%d", &op);
+        if(op == 1)
         {
-            int N;
-            ll v;
-            scanf("%d %lld", &N, &v);
-            Node *left = NULL;
-            Node *right = NULL;
-            split(treap, v, &left, &right);
-
-            int removed = getsize(left);
-            freeall(left);
-
-            treap = right;
-            printf("%d\n", removed);
-            treap = insert(treap, v, N);
-        }
-        else if (n == 2)
+            ll Ni, v;
+            scanf("%lld %lld", &Ni, &v);
+            op1(Ni, v);
+        } 
+        else if(op == 2)
         {
             ll p;
             scanf("%lld", &p);
-            int cnt = query(treap, p);
-            printf("%d\n", cnt);
-        }
-        else if (n == 3)
-        {
-            int num = getsize(treap);
-            if (num == 0)
-            {
-                continue;
-            }
-
-            ll *arr = malloc(num * sizeof(ll));
-            int index = 0;
-            traverse(treap, arr, &index);
-
-            for (int j = 0; j < num; j++)
-            {
-                arr[j] = arr[j] + M - j;
-            }
-
-            for (int k = 0; k < num / 2; k++)
-            {
-                ll tmp = arr[k];
-                arr[k] = arr[num - k - 1];
-                arr[num - k - 1] = tmp;
-            }
-
-            freeall(treap);
-            treap = buildtreap(arr, num);
-            free(arr);
-        }
+            op2(p);
+        } 
+        else op3();
     }
-
-    freeall(treap);
     return 0;
 }
